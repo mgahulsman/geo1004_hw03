@@ -24,7 +24,7 @@ endif()
 find_package(Eigen3 REQUIRED)
 include(CGAL_Eigen3_support)
 
-add_executable(cjdemo src/main.cpp)
+add_executable(cjdemo src/MAIN.cpp)
 
 target_compile_options(cjdemo PRIVATE -Wall)
 
