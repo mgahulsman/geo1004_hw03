@@ -1,3 +1,204 @@
 //
 // Created by maart on 5-6-2026.
 //
+#include <iostream>
+#include <fstream>
+#include <sstream>
+
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <algorithm>
+#include <limits>
+#include <cmath>
+#include <cassert>
+
+typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
+
+const std::string input_file = "../input/IfcOpenHouse_IFC4.obj";
+const std::string output_file = "../output/IfcOpenHouse_IFC4.city.json";
+
+struct Shell {
+    std::vector<Kernel::Triangle_3> triangles;
+};
+
+struct Object {
+    std::string id;
+    std::vector<Shell> shells;
+};
+
+std::map<std::string, Object> objects;
+
+struct VoxelGrid {
+    std::vector<unsigned int> voxels;
+    unsigned int max_x, max_y, max_z;
+
+    VoxelGrid(unsigned int x, unsigned int y, unsigned int z) {
+        max_x = x;
+        max_y = y;
+        max_z = z;
+        unsigned int total_voxels = x*y*z;
+        voxels.reserve(total_voxels);
+        for (unsigned int i = 0; i < total_voxels; ++i) voxels.push_back(0);
+    }
+
+    unsigned int &operator()(const unsigned int &x, const unsigned int &y, const unsigned int &z) {
+        assert(x < max_x);
+        assert(y < max_y);
+        assert(z < max_z);
+        return voxels[x + y*max_x + z*max_x*max_y];
+    }
+
+    unsigned int operator()(const unsigned int &x, const unsigned int &y, const unsigned int &z) const {
+        assert(x < max_x);
+        assert(y < max_y);
+        assert(z < max_z);
+        return voxels[x + y*max_x + z*max_x*max_y];
+    }
+};
+
+void world_to_voxel(double wx, double wy, double wz,
+                    double origin_x, double origin_y, double origin_z, double voxel_size,
+                    unsigned int &i, unsigned int &j, unsigned int &k) {
+    int calculated_i = static_cast<int>(std::floor((wx - origin_x) / voxel_size));
+    int calculated_j = static_cast<int>(std::floor((wy - origin_y) / voxel_size));
+    int calculated_k = static_cast<int>(std::floor((wz - origin_z) / voxel_size));
+
+    i = static_cast<unsigned int>(calculated_i);
+    j = static_cast<unsigned int>(calculated_j);
+    k = static_cast<unsigned int>(calculated_k);
+}
+
+void voxel_to_world(unsigned int i, unsigned int j, unsigned int k,
+                    double origin_x, double origin_y, double origin_z, double voxel_size,
+                    double &wx, double &wy, double &wz) {
+
+    wx = origin_x + (static_cast<double>(i) + 0.5) * voxel_size;
+    wy = origin_y + (static_cast<double>(j) + 0.5) * voxel_size;
+    wz = origin_z + (static_cast<double>(k) + 0.5) * voxel_size;
+}
+
+void mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects) {
+    // loop through each traing
+    for (const auto& [id, object] : objects) {
+        for (const auto& shell : object.shells) {
+            for (const auto& triangle : shell.triangles) {
+                // calc bbox for each triang
+                CGAL::Bbox_3 bbox = triangle.bbox();
+
+                unsigned int min_i, min_j, min_k;
+                unsigned int max_i, max_j, max_k;
+
+                world_to_voxel(bbox.xmin(), bbox.ymin(), bbox.zmin(),
+                    )
+
+
+                // world_to_voxelz
+            }
+        }
+    }
+    // loop through all voxels
+        // cgal do intersect ding
+
+}
+
+int main() {
+    std::ifstream input_stream;
+    input_stream.open(input_file);
+
+    if (!input_stream.is_open()) {
+        std::cerr << "Kan bestand niet openen: " << input_file << std::endl;
+        return 1;
+    }
+
+    std::string line;
+    std::vector<Kernel::Point_3> vertices;
+    std::string current_object_id = "";
+    Shell current_shell;
+
+    double min_x = std::numeric_limits<double>::infinity();
+    double min_y = std::numeric_limits<double>::infinity();
+    double min_z = std::numeric_limits<double>::infinity();
+
+    double max_x = -std::numeric_limits<double>::infinity();
+    double max_y = -std::numeric_limits<double>::infinity();
+    double max_z = -std::numeric_limits<double>::infinity();
+
+    // Parse line by line
+    while (getline(input_stream, line)) {
+        std::istringstream line_stream(line);
+        std::string line_type;
+        line_stream >> line_type;
+
+        Shell shell;
+
+        if (line_type == "g") {
+            if (!current_object_id.empty() && !current_shell.triangles.empty()) {
+                objects[current_object_id].id = current_object_id;
+                objects[current_object_id].shells.push_back(current_shell);
+            }
+
+            current_shell = Shell();
+            line_stream >> current_object_id;
+        }
+
+        if (line_type == "v") {
+            double x, y, z;
+            line_stream >> x >> y >> z;
+            vertices.push_back(Kernel::Point_3(x, y, z));
+
+            min_x = std::min(min_x, x);
+            min_y = std::min(min_y, y);
+            min_z = std::min(min_z, z);
+
+            max_x = std::max(max_x, x);
+            max_y = std::max(max_y, y);
+            max_z = std::max(max_z, z);
+
+        }
+
+        if (line_type == "f") {
+            int idx1, idx2, idx3;
+            char slash;
+            int vn1, vn2, vn3;
+
+            // TODO: potential error: faces heeft ook een texture
+            line_stream >> idx1 >> slash >> slash >> vn1;
+            line_stream >> idx2 >> slash >> slash >> vn2;
+            line_stream >> idx3 >> slash >> slash >> vn3;
+
+            Kernel::Point_3 p1 = vertices[idx1 - 1];
+            Kernel::Point_3 p2 = vertices[idx2 - 1];
+            Kernel::Point_3 p3 = vertices[idx3 - 1];
+
+            Kernel::Triangle_3 tri(p1, p2, p3);
+            current_shell.triangles.push_back(tri);
+        }
+    }
+    if (!current_object_id.empty() && !current_shell.triangles.empty()) {
+        objects[current_object_id].id = current_object_id;
+        objects[current_object_id].shells.push_back(current_shell);
+    }
+    else {
+        std::cerr << "obj file empty?" << std::endl;
+    }
+
+    std::cout << "\nInlezen voltooid! Resultaten:" << std::endl;
+    for (const auto& [id, obj] : objects) {
+        std::cout << "Object: " << id << " heeft " << obj.shells.size() << " shell(s) met in totaal ";
+        size_t total_triangles = 0;
+        for (const auto& s : obj.shells) total_triangles += s.triangles.size();
+        std::cout << total_triangles << " driehoeken." << std::endl;
+    }
+
+    double voxel_size = 0.5;
+    unsigned int rows_x = static_cast<unsigned int>(std::ceil((max_x - min_x) / voxel_size));
+    unsigned int rows_y = static_cast<unsigned int>(std::ceil((max_y - min_y) / voxel_size));
+    unsigned int rows_z = static_cast<unsigned int>(std::ceil((max_z - min_z) / voxel_size));
+
+    VoxelGrid my_building_grid(rows_x + 2, rows_y + 2, rows_z + 2);
+    std::cout << "Grid succesvol aangemaakt met grootte: " << rows_x << "x" << rows_y << "x" << rows_z << std::endl;
+
+    // Apply bbox heuristic
+
+
+    return 0;
+}
