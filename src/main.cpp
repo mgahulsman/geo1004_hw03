@@ -13,6 +13,8 @@
 #include <CGAL/Point_3.h>
 #include <CGAL/Segment_3.h>
 #include <CGAL/intersections.h>
+#include <queue>
+#include <tuple>
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef CGAL::Segment_3<Kernel> Segment;
@@ -162,6 +164,27 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
     }
     return marked;
 
+}
+
+void mark_exterior_voxel(VoxelGrid &voxel_grid) {
+    std::queue<std::tuple<unsigned int, unsigned int, unsigned int>> queue;
+
+
+    queue.push(std::make_tuple(0, 0, 0));
+
+    while (!queue.empty()) {
+        std::tuple<unsigned int, unsigned int, unsigned int> current_voxel = queue.front();
+        queue.pop();
+        voxel_grid(current_voxel) = 2;
+        
+    }
+
+    voxel_grid(0,0,0) = 2;
+    for (auto& voxel : voxel_grid) {
+            if neighbour = 0;
+                neighbour = 2;
+                neighbour = next_voxel;
+    }
 }
 
 int main() {
