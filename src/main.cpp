@@ -10,8 +10,13 @@
 #include <limits>
 #include <cmath>
 #include <cassert>
+#include <CGAL/Point_3.h>
+#include <CGAL/Segment_3.h>
+#include <CGAL/intersections.h>
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
+typedef CGAL::Segment_3<Kernel> Segment;
+typedef CGAL::Point_3<Kernel> Point;
 
 const std::string input_file = "../input/IfcOpenHouse_IFC4.obj";
 const std::string output_file = "../output/IfcOpenHouse_IFC4.city.json";
@@ -71,32 +76,91 @@ void voxel_to_world(unsigned int i, unsigned int j, unsigned int k,
                     double origin_x, double origin_y, double origin_z, double voxel_size,
                     double &wx, double &wy, double &wz) {
 
-    wx = origin_x + (static_cast<double>(i) + 0.5) * voxel_size;
-    wy = origin_y + (static_cast<double>(j) + 0.5) * voxel_size;
-    wz = origin_z + (static_cast<double>(k) + 0.5) * voxel_size;
+    wx = origin_x + (static_cast<double>(i)) * voxel_size;
+    wy = origin_y + (static_cast<double>(j)) * voxel_size;
+    wz = origin_z + (static_cast<double>(k)) * voxel_size;
 }
 
-void mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects) {
+int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
+    double origin_x, double origin_y, double origin_z, double voxel_size) {
     // loop through each traing
+    int marked = 0;
     for (const auto& [id, object] : objects) {
         for (const auto& shell : object.shells) {
             for (const auto& triangle : shell.triangles) {
                 // calc bbox for each triang
                 CGAL::Bbox_3 bbox = triangle.bbox();
 
+                // Get the min and max voxel coordinates of the triangle's bounding box
                 unsigned int min_i, min_j, min_k;
                 unsigned int max_i, max_j, max_k;
 
                 world_to_voxel(bbox.xmin(), bbox.ymin(), bbox.zmin(),
-                    )
+                    origin_x, origin_y, origin_z, voxel_size,
+                    min_i, min_j, min_k
+                    );
 
+                world_to_voxel(bbox.xmax(), bbox.ymax(), bbox.zmax(),
+                     origin_x, origin_y, origin_z, voxel_size,
+                     max_i, max_j, max_k
+                     );
 
-                // world_to_voxelz
+                // Loop through the voxel indices within the bounding box
+                for (unsigned int i = min_i; i <= max_i; ++i) {
+                    for (unsigned int j = min_j; j <= max_j; ++j) {
+                        for (unsigned int k = min_k; k <= max_k; ++k) {
+                            double wx_min, wy_min, wz_min;
+                            voxel_to_world(i, j, k,
+                                origin_x, origin_y, origin_z, voxel_size,
+                                wx_min, wy_min, wz_min
+                                );
+
+                            double wx_max = wx_min + voxel_size;
+                            double wy_max = wy_min + voxel_size;
+                            double wz_max = wz_min + voxel_size;
+
+                            // cgal do intersect ding
+                            Point p1(wx_min, wy_min, wz_min);
+                            Point p2(wx_max, wy_min, wz_min);
+                            Point p3(wx_min, wy_max, wz_min);
+                            Point p4(wx_max, wy_max, wz_min);
+                            Point p5(wx_min, wy_min, wz_max);
+                            Point p6(wx_max, wy_min, wz_max);
+                            Point p7(wx_min, wy_max, wz_max);
+                            Point p8(wx_max, wy_max, wz_max);
+
+                            std::vector<Segment> edges;
+                            edges.emplace_back(p1,p2);
+                            edges.emplace_back(p1,p3);
+                            edges.emplace_back(p1,p5);
+                            edges.emplace_back(p2,p6);
+
+                            edges.emplace_back(p2,p4);
+                            edges.emplace_back(p3,p4);
+                            edges.emplace_back(p3,p7);
+                            edges.emplace_back(p4,p8);
+
+                            edges.emplace_back(p5,p6);
+                            edges.emplace_back(p5,p7);
+                            edges.emplace_back(p6,p8);
+                            edges.emplace_back(p7,p8);
+
+                            for (const auto& edge: edges) {
+                                if (CGAL::do_intersect(triangle, edge)) {
+                                    voxel_grid(i,j,k) = 1;
+                                    marked++;
+                                }
+
+                            }
+
+                        }
+                    }
+                }
+
             }
         }
     }
-    // loop through all voxels
-        // cgal do intersect ding
+    return marked;
 
 }
 
@@ -198,7 +262,8 @@ int main() {
     std::cout << "Grid succesvol aangemaakt met grootte: " << rows_x << "x" << rows_y << "x" << rows_z << std::endl;
 
     // Apply bbox heuristic
-
+    int marked = mark_voxel(my_building_grid, objects, min_x, min_y, min_z, voxel_size);
+    std::cout << "Aantal voxels gemarkeerd met 1: " << marked << std::endl;
 
     return 0;
 }
