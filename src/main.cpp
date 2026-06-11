@@ -25,8 +25,8 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef CGAL::Segment_3<Kernel> Segment;
 typedef CGAL::Point_3<Kernel> Point;
 
-const std::string input_file = "../input/IfcOpenHouse_IFC4.obj";
-const std::string output_file = "../output/IfcOpenHouse_IFC4.city.json";
+const std::string input_file = "../input/Wellness_center.obj";
+const std::string output_file = "../output/Wellness_center.city.json";
 
 struct Shell {
     std::vector<Kernel::Triangle_3> triangles;
@@ -162,7 +162,6 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
     return marked;
 }
 
-// Oplossing Geheugenexplosie & Crashes: Grenzen gelden voor ELK segment, direct markeren bij ontdekken
 void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, unsigned int> point, int segmentation_number, std::map<unsigned int, unsigned int>& segment_voxel_counter) {
     std::queue<std::tuple<unsigned int, unsigned int, unsigned int>> queue;
 
@@ -189,7 +188,6 @@ void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, 
             int nj = static_cast<int>(j) + dy[n];
             int nk = static_cast<int>(k) + dz[n];
 
-            // FIX: Grenscontrole is universeel verplicht om out-of-bounds assert-failures te voorkomen
             if (ni < 0 || nj < 0 || nk < 0) continue;
             if (ni >= static_cast<int>(voxel_grid.max_x) ||
                 nj >= static_cast<int>(voxel_grid.max_y) ||
@@ -203,6 +201,109 @@ void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, 
                     static_cast<unsigned int>(nj),
                     static_cast<unsigned int>(nk)
                 });
+            }
+        }
+    }
+}
+
+void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, double origin_z, double voxel_size,
+    std::vector<std::vector<size_t>> &building_envelope_faces, std::map<unsigned int, std::vector<std::vector<size_t>>> &room_solid_faces, std::vector<std::array<double, 3>> &global_vertices) {
+
+    std::cout << "\nStarten met Stap 6: Oppervlakken extraheren..." << std::endl;
+
+    std::map<std::tuple<unsigned int, unsigned int, unsigned int>, size_t> corner_to_idx;
+
+    // Function to save the corner coordinates
+    auto get_vertex = [&](unsigned int u, unsigned int v, unsigned int w) -> size_t {
+        std::tuple<unsigned int, unsigned int, unsigned int> corner = {u, v, w};
+        if (corner_to_idx.count(corner)) return corner_to_idx[corner];
+
+        double wx, wy, wz;
+        voxel_to_world(u, v, w, origin_x, origin_y, origin_z, voxel_size, wx, wy, wz);
+        global_vertices.push_back({wx, wy, wz});
+
+        size_t new_idx = global_vertices.size() - 1;
+        corner_to_idx[corner] = new_idx;
+        return new_idx;
+    };
+
+    // Function to get the correct face
+    auto get_face_indices = [&](unsigned int i, unsigned int j, unsigned int k, int n) -> std::vector<size_t> {
+        std::vector<size_t> face;
+        if (n == 0) { // +X (Oost)
+            face.push_back(get_vertex(i + 1, j,     k));
+            face.push_back(get_vertex(i + 1, j + 1, k));
+            face.push_back(get_vertex(i + 1, j + 1, k + 1));
+            face.push_back(get_vertex(i + 1, j,     k + 1));
+        } else if (n == 1) { // -X (West)
+            face.push_back(get_vertex(i,     j,     k));
+            face.push_back(get_vertex(i,     j,     k + 1));
+            face.push_back(get_vertex(i,     j + 1, k + 1));
+            face.push_back(get_vertex(i,     j + 1, k));
+        } else if (n == 2) { // +Y (Noord)
+            face.push_back(get_vertex(i,     j + 1, k));
+            face.push_back(get_vertex(i,     j + 1, k + 1));
+            face.push_back(get_vertex(i + 1, j + 1, k + 1));
+            face.push_back(get_vertex(i + 1, j + 1, k));
+        } else if (n == 3) { // -Y (Zuid)
+            face.push_back(get_vertex(i,     j,     k));
+            face.push_back(get_vertex(i + 1, j,     k));
+            face.push_back(get_vertex(i + 1, j,     k + 1));
+            face.push_back(get_vertex(i,     j,     k + 1));
+        } else if (n == 4) { // +Z (Boven)
+            face.push_back(get_vertex(i,     j,     k + 1));
+            face.push_back(get_vertex(i + 1, j,     k + 1));
+            face.push_back(get_vertex(i + 1, j + 1, k + 1));
+            face.push_back(get_vertex(i,     j + 1, k + 1));
+        } else if (n == 5) { // -Z (Onder)
+            face.push_back(get_vertex(i,     j,     k));
+            face.push_back(get_vertex(i,     j + 1, k));
+            face.push_back(get_vertex(i + 1, j + 1, k));
+            face.push_back(get_vertex(i + 1, j,     k));
+        }
+        return face;
+    };
+
+
+
+    const int dx[6] = { 1, -1, 0, 0, 0, 0 };
+    const int dy[6] = { 0, 0, 1, -1, 0, 0 };
+    const int dz[6] = { 0, 0, 0, 0, 1, -1 };
+
+    for (unsigned int i = 0; i < voxel_grid.max_x; ++i) {
+        for (unsigned int j = 0; j < voxel_grid.max_y; ++j) {
+            for (unsigned int k = 0; k < voxel_grid.max_z; ++k) {
+
+                unsigned int current_id = voxel_grid(i, j, k);
+
+                if (current_id != 1) {
+                    continue;
+                }
+
+                unsigned int neighbor_id;
+
+                for (int n = 0; n < 6; ++n) {
+                    int ni = static_cast<int>(i) + dx[n];
+                    int nj = static_cast<int>(j) + dy[n];
+                    int nk = static_cast<int>(k) + dz[n];
+
+                    if (ni < 0 || nj < 0 || nk < 0 ||
+                    ni >= static_cast<int>(voxel_grid.max_x) ||
+                    nj >= static_cast<int>(voxel_grid.max_y) ||
+                    nk >= static_cast<int>(voxel_grid.max_z)) {
+                        neighbor_id = 2;
+
+                    } else {
+                        neighbor_id = voxel_grid(ni, nj, nk);
+                    }
+
+                    if (neighbor_id == 2) {
+                        building_envelope_faces.push_back(get_face_indices(i, j, k, n));
+                    }
+                    else if (current_id != neighbor_id) {
+                        room_solid_faces[current_id].push_back(get_face_indices(i, j, k, n));
+                    }
+                }
             }
         }
     }
@@ -304,120 +405,22 @@ int main() {
         std::cout << "Segment " << segment_id << ": " << voxel_count << " voxels\n";
     }
 
-    // ==========================================
-    // STAP 6: EXTRACTING THE SURFACES (BOUNDARIES)
-    // ==========================================
-    std::cout << "\nStarten met Stap 6: Oppervlakken extraheren..." << std::endl;
-
-    std::vector<std::array<double, 3>> global_vertices;
-    std::map<std::tuple<unsigned int, unsigned int, unsigned int>, size_t> corner_to_idx;
-
-    // Helper lambda om unieke hoekpunten op te slaan in CityJSON formaat
-    auto get_vertex = [&](unsigned int u, unsigned int v, unsigned int w) -> size_t {
-        std::tuple<unsigned int, unsigned int, unsigned int> corner = {u, v, w};
-        if (corner_to_idx.count(corner)) return corner_to_idx[corner];
-
-        double wx, wy, wz;
-        voxel_to_world(u, v, w, origin_x, origin_y, origin_z, voxel_size, wx, wy, wz);
-        global_vertices.push_back({wx, wy, wz});
-
-        size_t new_idx = global_vertices.size() - 1;
-        corner_to_idx[corner] = new_idx;
-        return new_idx;
-    };
-
-    // Helper lambda om de 4 hoekpunten van een voxelzijde (face) met CCW winding op te halen
-    auto get_face_indices = [&](unsigned int i, unsigned int j, unsigned int k, int n) -> std::vector<size_t> {
-        std::vector<size_t> face;
-        if (n == 0) { // +X (Oost)
-            face.push_back(get_vertex(i + 1, j,     k));
-            face.push_back(get_vertex(i + 1, j + 1, k));
-            face.push_back(get_vertex(i + 1, j + 1, k + 1));
-            face.push_back(get_vertex(i + 1, j,     k + 1));
-        } else if (n == 1) { // -X (West)
-            face.push_back(get_vertex(i,     j,     k));
-            face.push_back(get_vertex(i,     j,     k + 1));
-            face.push_back(get_vertex(i,     j + 1, k + 1));
-            face.push_back(get_vertex(i,     j + 1, k));
-        } else if (n == 2) { // +Y (Noord)
-            face.push_back(get_vertex(i,     j + 1, k));
-            face.push_back(get_vertex(i,     j + 1, k + 1));
-            face.push_back(get_vertex(i + 1, j + 1, k + 1));
-            face.push_back(get_vertex(i + 1, j + 1, k));
-        } else if (n == 3) { // -Y (Zuid)
-            face.push_back(get_vertex(i,     j,     k));
-            face.push_back(get_vertex(i + 1, j,     k));
-            face.push_back(get_vertex(i + 1, j,     k + 1));
-            face.push_back(get_vertex(i,     j,     k + 1));
-        } else if (n == 4) { // +Z (Boven)
-            face.push_back(get_vertex(i,     j,     k + 1));
-            face.push_back(get_vertex(i + 1, j,     k + 1));
-            face.push_back(get_vertex(i + 1, j + 1, k + 1));
-            face.push_back(get_vertex(i,     j + 1, k + 1));
-        } else if (n == 5) { // -Z (Onder)
-            face.push_back(get_vertex(i,     j,     k));
-            face.push_back(get_vertex(i,     j + 1, k));
-            face.push_back(get_vertex(i + 1, j + 1, k));
-            face.push_back(get_vertex(i + 1, j,     k));
-        }
-        return face;
-    };
-
     std::vector<std::vector<size_t>> building_envelope_faces;
     std::map<unsigned int, std::vector<std::vector<size_t>>> room_solid_faces;
+    std::vector<std::array<double, 3>> global_vertices;
 
-    const int dx[6] = { 1, -1, 0, 0, 0, 0 };
-    const int dy[6] = { 0, 0, 1, -1, 0, 0 };
-    const int dz[6] = { 0, 0, 0, 0, 1, -1 };
 
-    for (unsigned int i = 0; i < my_building_grid.max_x; ++i) {
-        for (unsigned int j = 0; j < my_building_grid.max_y; ++j) {
-            for (unsigned int k = 0; k < my_building_grid.max_z; ++k) {
+    extract_surface(my_building_grid, origin_x, origin_y, origin_z, voxel_size, building_envelope_faces, room_solid_faces, global_vertices);
 
-                unsigned int current_id = my_building_grid(i, j, k);
+    std::cout << "Starting CityJSON..." << std::endl;
 
-                for (int n = 0; n < 6; ++n) {
-                    int ni = static_cast<int>(i) + dx[n];
-                    int nj = static_cast<int>(j) + dy[n];
-                    int nk = static_cast<int>(k) + dz[n];
-
-                    unsigned int neighbor_id = 2; // Als buurman out-of-bounds is, is het automatisch exterior (2)
-                    if (ni >= 0 && nj >= 0 && nk >= 0 &&
-                        ni < static_cast<int>(my_building_grid.max_x) &&
-                        nj < static_cast<int>(my_building_grid.max_y) &&
-                        nk < static_cast<int>(my_building_grid.max_z)) {
-                        neighbor_id = my_building_grid(ni, nj, nk);
-                    }
-
-                    // Conditie A: Outer Envelope van het Gebouw
-                    // Als de huidige voxel binnen/muur is (niet 2) en de buurman is buitenwereld (2)
-                    if (current_id != 2 && neighbor_id == 2) {
-                        building_envelope_faces.push_back(get_face_indices(i, j, k, n));
-                    }
-
-                    // Conditie B: Individuele Kamers (Rooms)
-                    // Als de huidige voxel een kamer is (>= 3) en de buurman heeft een andere ID
-                    if (current_id >= 3 && current_id != neighbor_id) {
-                        room_solid_faces[current_id].push_back(get_face_indices(i, j, k, n));
-                    }
-                }
-            }
-        }
-    }
-
-    // ==========================================
-    // STAP 7: WRITING CITYJSON
-    // ==========================================
-    std::cout << "Starten met Stap 7: CityJSON structuur opbouwen..." << std::endl;
-
-    nlohmann::json cj;
-    cj["type"] = "CityJSON";
-    cj["version"] = "2.0";
-    cj["transform"] = {
-        {"scale", {1.0, 1.0, 1.0}},
-        {"translate", {0.0, 0.0, 0.0}}
-    };
-    cj["CityObjects"] = nlohmann::json::object();
+    nlohmann::json json;
+    json["type"] = "CityJSON";
+    json["version"] = "2.0";
+    json["transform"] = nlohmann::json::object();
+    json["transform"]["scale"] = nlohmann::json::array({voxel_size, voxel_size, voxel_size});
+    json["transform"]["translate"] = nlohmann::json::array({origin_x, origin_y, origin_z});
+    json["CityObjects"] = nlohmann::json::object();
 
     // 1. Voeg het hoofdgebouw toe (Building)
     nlohmann::json building_obj;
@@ -426,11 +429,14 @@ int main() {
     nlohmann::json building_geom;
     building_geom["type"] = "Solid";
     building_geom["lod"] = "1.0";
-    // Boundaries vereist een 3D array structuur: [ [ [face1], [face2] ] ]
-    building_geom["boundaries"] = nlohmann::json::array({ nlohmann::json::array({ building_envelope_faces }) });
+    nlohmann::json building_surfaces = nlohmann::json::array();
+    for(const auto& face : building_envelope_faces) {
+        building_surfaces.push_back(nlohmann::json::array({ face }));
+    }
+    building_geom["boundaries"] = nlohmann::json::array({ building_surfaces });
     building_obj["geometry"] = nlohmann::json::array({ building_geom });
 
-    cj["CityObjects"]["id_main_building"] = building_obj;
+    json["CityObjects"]["id_main_building"] = building_obj;
 
     // 2. Voeg alle kamers toe (BuildingRoom)
     for (const auto& [room_id, faces] : room_solid_faces) {
@@ -441,11 +447,15 @@ int main() {
         nlohmann::json room_geom;
         room_geom["type"] = "Solid";
         room_geom["lod"] = "1.0";
-        room_geom["boundaries"] = nlohmann::json::array({ nlohmann::json::array({ faces }) });
+        nlohmann::json room_surfaces = nlohmann::json::array();
+        for(const auto& face : faces) {
+            room_surfaces.push_back(nlohmann::json::array({ face }));
+        }
+        room_geom["boundaries"] = nlohmann::json::array({ room_surfaces });
         room_obj["geometry"] = nlohmann::json::array({ room_geom });
 
         std::string room_key = "Room_" + std::to_string(room_id);
-        cj["CityObjects"][room_key] = room_obj;
+        json["CityObjects"][room_key] = room_obj;
     }
 
     // 3. Converteer de global_vertices naar de JSON vertex-lijst
@@ -453,7 +463,7 @@ int main() {
     for (const auto& v : global_vertices) {
         json_vertices.push_back({v[0], v[1], v[2]});
     }
-    cj["vertices"] = json_vertices;
+    json["vertices"] = json_vertices;
 
     // 4. Schrijf de boel daadwerkelijk weg naar disk
     std::filesystem::path p(output_file);
@@ -463,7 +473,7 @@ int main() {
 
     std::ofstream out_file(output_file);
     if (out_file.is_open()) {
-        out_file << cj.dump(2); // Indentatie van 2 spaties voor leesbaarheid
+        out_file << json.dump(2); // Indentatie van 2 spaties voor leesbaarheid
         out_file.close();
         std::cout << "Hoera! CityJSON succesvol gegenereerd op: " << output_file << std::endl;
     } else {
