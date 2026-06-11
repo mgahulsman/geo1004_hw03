@@ -166,55 +166,7 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
 
 }
 
-void mark_exterior_voxel(VoxelGrid& voxel_grid)
-{
-    std::queue<std::tuple<unsigned int, unsigned int, unsigned int>> queue;
-
-    queue.push({0, 0, 0});
-
-    while (!queue.empty()) {
-        auto [i, j, k] = queue.front();
-        queue.pop();
-
-        // Already visited?
-        if (voxel_grid(i, j, k) != 0)
-            continue;
-
-        voxel_grid(i, j, k) = 2;
-
-        const int dx[6] = { 1, -1, 0, 0, 0, 0 };
-        const int dy[6] = { 0, 0, 1, -1, 0, 0 };
-        const int dz[6] = { 0, 0, 0, 0, 1, -1 };
-
-        for (int n = 0; n < 6; ++n)
-        {
-            int ni = static_cast<int>(i) + dx[n];
-            int nj = static_cast<int>(j) + dy[n];
-            int nk = static_cast<int>(k) + dz[n];
-
-            // Bounds check
-            if (ni < 0 || nj < 0 || nk < 0)
-                continue;
-
-            if (ni >= static_cast<int>(voxel_grid.max_x) ||
-                nj >= static_cast<int>(voxel_grid.max_y) ||
-                nk >= static_cast<int>(voxel_grid.max_z))
-                continue;
-
-            // Only flood-fill empty voxels
-            if (voxel_grid(ni, nj, nk) == 0)
-            {
-                queue.push({
-                    static_cast<unsigned int>(ni),
-                    static_cast<unsigned int>(nj),
-                    static_cast<unsigned int>(nk)
-                });
-            }
-        }
-    }
-}
-
-void mark_interior_voxel(VoxelGrid& voxel_grid, std::tuple<int, int, int> point, int segmentation_number) {
+void mark_segment(VoxelGrid& voxel_grid, std::tuple<int, int, int> point, int segmentation_number, std::map<unsigned int, unsigned int>& segment_voxel_counter) {
     std::queue<std::tuple<unsigned int, unsigned int, unsigned int>> queue;
     queue.push({point});
 
@@ -222,11 +174,12 @@ void mark_interior_voxel(VoxelGrid& voxel_grid, std::tuple<int, int, int> point,
         auto [i, j, k] = queue.front();
         queue.pop();
 
-        // Already visited?
+        // Already labaled check
         if (voxel_grid(i, j, k) != 0)
             continue;
 
         voxel_grid(i, j, k) = segmentation_number;
+        segment_voxel_counter[segmentation_number]++;
 
         const int dx[6] = { 1, -1, 0, 0, 0, 0 };
         const int dy[6] = { 0, 0, 1, -1, 0, 0 };
@@ -238,14 +191,16 @@ void mark_interior_voxel(VoxelGrid& voxel_grid, std::tuple<int, int, int> point,
             int nj = static_cast<int>(j) + dy[n];
             int nk = static_cast<int>(k) + dz[n];
 
-            // // Bounds check - not necessary here because we are in an interior area
-            // if (ni < 0 || nj < 0 || nk < 0)
-            //     continue;
-            //
-            // if (ni >= static_cast<int>(voxel_grid.max_x) ||
-            //     nj >= static_cast<int>(voxel_grid.max_y) ||
-            //     nk >= static_cast<int>(voxel_grid.max_z))
-            //     continue;
+            // Only needed for the exterior segment
+            if (segmentation_number == 2){
+                if (ni < 0 || nj < 0 || nk < 0)
+                    continue;
+
+                if (ni >= static_cast<int>(voxel_grid.max_x) ||
+                    nj >= static_cast<int>(voxel_grid.max_y) ||
+                    nk >= static_cast<int>(voxel_grid.max_z))
+                    continue;
+            }
 
             // Only flood-fill empty voxels
             if (voxel_grid(ni, nj, nk) == 0)
@@ -362,21 +317,39 @@ int main() {
     int marked = mark_voxel(my_building_grid, objects, min_x, min_y, min_z, voxel_size);
     std::cout << "Aantal voxels gemarkeerd met 1: " << marked << std::endl;
 
-    mark_exterior_voxel(my_building_grid);
+    std::map<unsigned int, unsigned int> segment_voxel_counter;
+    int segmentation_number = 2;
+    std::tuple<int, int, int> exterior_point = {0, 0, 0};
+    mark_segment(my_building_grid, exterior_point, segmentation_number, segment_voxel_counter);
 
-    int interior_number = 3;
     for (unsigned int i = 0; i < my_building_grid.max_x; ++i)
     {
         for (unsigned int j = 0; j < my_building_grid.max_y; ++j)
         {
             for (unsigned int k = 0; k < my_building_grid.max_z; ++k)
             {
-                if (my_building_grid(i,j,k) == 0)
+                if (my_building_grid(i,j,k) == 0) {
                     std::tuple<int, int, int> interior_point = {i, j, k};
-                    mark_interior_voxel(my_building_grid, interior_point, interior_number); // interior
-                    interior_number++;
+                    mark_segment(
+                        my_building_grid,
+                        interior_point,
+                        segmentation_number,
+                        segment_voxel_counter
+                    );
+                    segmentation_number++;
+                }
             }
         }
+    }
+
+    for (const auto& [segment_id, voxel_count] : segment_voxel_counter)
+    {
+        std::cout
+            << "Segment "
+            << segment_id
+            << ": "
+            << voxel_count
+            << " voxels\n";
     }
 
     return 0;
