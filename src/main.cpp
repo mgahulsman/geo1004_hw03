@@ -148,11 +148,11 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
                             edges.emplace_back(p7,p8);
 
                             for (const auto& edge: edges) {
-                                if (CGAL::do_intersect(triangle, edge)) {
+                                if (CGAL::do_intersect(triangle, edge) and voxel_grid(i,j,k) == 0) {
                                     voxel_grid(i,j,k) = 1;
                                     marked++;
+                                    break; // No need to check the other edges anymore
                                 }
-
                             }
 
                         }
