@@ -172,8 +172,7 @@ void mark_exterior_voxel(VoxelGrid& voxel_grid)
 
     queue.push({0, 0, 0});
 
-    while (!queue.empty())
-    {
+    while (!queue.empty()) {
         auto [i, j, k] = queue.front();
         queue.pop();
 
@@ -218,6 +217,48 @@ void mark_exterior_voxel(VoxelGrid& voxel_grid)
 void mark_interior_voxel(VoxelGrid& voxel_grid, std::tuple<int, int, int> point, int segmentation_number) {
     std::queue<std::tuple<unsigned int, unsigned int, unsigned int>> queue;
     queue.push({point});
+
+    while (!queue.empty()) {
+        auto [i, j, k] = queue.front();
+        queue.pop();
+
+        // Already visited?
+        if (voxel_grid(i, j, k) != 0)
+            continue;
+
+        voxel_grid(i, j, k) = segmentation_number;
+
+        const int dx[6] = { 1, -1, 0, 0, 0, 0 };
+        const int dy[6] = { 0, 0, 1, -1, 0, 0 };
+        const int dz[6] = { 0, 0, 0, 0, 1, -1 };
+
+        for (int n = 0; n < 6; ++n)
+        {
+            int ni = static_cast<int>(i) + dx[n];
+            int nj = static_cast<int>(j) + dy[n];
+            int nk = static_cast<int>(k) + dz[n];
+
+            // // Bounds check - not necessary here because we are in an interior area
+            // if (ni < 0 || nj < 0 || nk < 0)
+            //     continue;
+            //
+            // if (ni >= static_cast<int>(voxel_grid.max_x) ||
+            //     nj >= static_cast<int>(voxel_grid.max_y) ||
+            //     nk >= static_cast<int>(voxel_grid.max_z))
+            //     continue;
+
+            // Only flood-fill empty voxels
+            if (voxel_grid(ni, nj, nk) == 0)
+            {
+                queue.push({
+                    static_cast<unsigned int>(ni),
+                    static_cast<unsigned int>(nj),
+                    static_cast<unsigned int>(nk)
+                });
+            }
+        }
+    }
+
 }
 
 int main() {
