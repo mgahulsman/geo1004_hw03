@@ -6,7 +6,7 @@ Anna Scherrenburg - 5212723
 Maarten Hulsman - 5379989
 
 ## Code instructions
-Before running the script, ensure your input data is placed in the correct relative directory. The program expects an input file to be present in the ../input/ folder relative to the execution path.
+Before running the script, ensure your input data is placed in the correct relative directory. The program expects an input file to be present in the ../input/ folder relative to the execution path. In order to write to the CityJSON file, it is important to have json.hpp in the include folder.
 
 ```text
 .
@@ -14,6 +14,8 @@ Before running the script, ensure your input data is placed in the correct relat
 │   └── input_file.obj
 ├── src/
 │   └── main.cpp
+├── include/
+│   └── json.hpp
 ├── CMakeLists.txt
 └── README.md
 ```
