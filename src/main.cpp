@@ -25,7 +25,7 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef CGAL::Segment_3<Kernel> Segment;
 typedef CGAL::Point_3<Kernel> Point;
 
-const std::string input_file = "../input/Wellness_center.obj";
+const std::string input_file = "../input/Wellness_center_v2.obj";
 const std::string output_file = "../output/Wellness_center.city.json";
 
 struct Shell {
@@ -99,6 +99,7 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
                 unsigned int min_i, min_j, min_k;
                 unsigned int max_i, max_j, max_k;
 
+                // Get voxel coordinates of the triangle bounding box
                 world_to_voxel(bbox.xmin(), bbox.ymin(), bbox.zmin(),
                     origin_x, origin_y, origin_z, voxel_size,
                     min_i, min_j, min_k
@@ -109,16 +110,17 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
                      max_i, max_j, max_k
                      );
 
-                // Zorg dat de bounding box binnen de gridgrenzen blijft
+                // Make sure it is within bounds
                 max_i = std::min(max_i, voxel_grid.max_x - 1);
                 max_j = std::min(max_j, voxel_grid.max_y - 1);
                 max_k = std::min(max_k, voxel_grid.max_z - 1);
 
+                //Loop through the voxel within the bounding box
                 for (unsigned int i = min_i; i <= max_i; ++i) {
                     for (unsigned int j = min_j; j <= max_j; ++j) {
                         for (unsigned int k = min_k; k <= max_k; ++k) {
 
-                            // Performance optimalisatie: check eerst of voxel al gevuld is
+                            // Check if it's already marked
                             if (voxel_grid(i,j,k) == 1) continue;
 
                             double wx_min, wy_min, wz_min;
@@ -131,6 +133,7 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
                             double wy_max = wy_min + voxel_size;
                             double wz_max = wz_min + voxel_size;
 
+                            // Initialize the 12 edges of the voxel cube we're in
                             Point p1(wx_min, wy_min, wz_min);
                             Point p2(wx_max, wy_min, wz_min);
                             Point p3(wx_min, wy_max, wz_min);
@@ -146,6 +149,7 @@ int mark_voxel(VoxelGrid &voxel_grid, std::map<std::string, Object> objects,
                             edges.emplace_back(p3,p7); edges.emplace_back(p4,p8); edges.emplace_back(p5,p6);
                             edges.emplace_back(p5,p7); edges.emplace_back(p6,p8); edges.emplace_back(p7,p8);
 
+                            // Loop through all edges to see if they intersect with the triangle
                             for (const auto& edge: edges) {
                                 if (CGAL::do_intersect(triangle, edge)) {
                                     voxel_grid(i,j,k) = 1;
@@ -175,10 +179,12 @@ void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, 
         queue.push(point);
     }
 
+    // Necessary to easily get all neighbors of a voxel
     const int dx[6] = { 1, -1, 0, 0, 0, 0 };
     const int dy[6] = { 0, 0, 1, -1, 0, 0 };
     const int dz[6] = { 0, 0, 0, 0, 1, -1 };
 
+    // Loop through the queue with voxels (starting with (0,0,0))
     while (!queue.empty()) {
         auto [i, j, k] = queue.front();
         queue.pop();
@@ -188,11 +194,13 @@ void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, 
             int nj = static_cast<int>(j) + dy[n];
             int nk = static_cast<int>(k) + dz[n];
 
+            // Check if neighbor is within the bounds
             if (ni < 0 || nj < 0 || nk < 0) continue;
             if (ni >= static_cast<int>(voxel_grid.max_x) ||
                 nj >= static_cast<int>(voxel_grid.max_y) ||
                 nk >= static_cast<int>(voxel_grid.max_z)) continue;
 
+            // Give the voxel the correct segment number and add it to the queue
             if (voxel_grid(ni, nj, nk) == 0) {
                 voxel_grid(ni, nj, nk) = segmentation_number;
                 segment_voxel_counter[segmentation_number]++;
@@ -208,8 +216,6 @@ void mark_segment(VoxelGrid& voxel_grid, std::tuple<unsigned int, unsigned int, 
 
 void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, double origin_z, double voxel_size,
     std::vector<std::vector<size_t>> &building_envelope_faces, std::map<unsigned int, std::vector<std::vector<size_t>>> &room_solid_faces, std::vector<std::array<double, 3>> &global_vertices) {
-
-    std::cout << "\nStarten met Stap 6: Oppervlakken extraheren..." << std::endl;
 
     std::map<std::tuple<unsigned int, unsigned int, unsigned int>, size_t> corner_to_idx;
 
@@ -227,10 +233,10 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
         return new_idx;
     };
 
-    // Function to get the correct face
+    // Function to get the correct face (orientation)
     auto get_face_indices = [&](unsigned int i, unsigned int j, unsigned int k, int n) -> std::vector<size_t> {
         std::vector<size_t> face;
-        if (n == 0) { // +X (Oost)
+        if (n == 0) { // +X (East)
             face.push_back(get_vertex(i + 1, j,     k));
             face.push_back(get_vertex(i + 1, j + 1, k));
             face.push_back(get_vertex(i + 1, j + 1, k + 1));
@@ -240,22 +246,22 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
             face.push_back(get_vertex(i,     j,     k + 1));
             face.push_back(get_vertex(i,     j + 1, k + 1));
             face.push_back(get_vertex(i,     j + 1, k));
-        } else if (n == 2) { // +Y (Noord)
+        } else if (n == 2) { // +Y (North)
             face.push_back(get_vertex(i,     j + 1, k));
             face.push_back(get_vertex(i,     j + 1, k + 1));
             face.push_back(get_vertex(i + 1, j + 1, k + 1));
             face.push_back(get_vertex(i + 1, j + 1, k));
-        } else if (n == 3) { // -Y (Zuid)
+        } else if (n == 3) { // -Y (South)
             face.push_back(get_vertex(i,     j,     k));
             face.push_back(get_vertex(i + 1, j,     k));
             face.push_back(get_vertex(i + 1, j,     k + 1));
             face.push_back(get_vertex(i,     j,     k + 1));
-        } else if (n == 4) { // +Z (Boven)
+        } else if (n == 4) { // +Z (Up)
             face.push_back(get_vertex(i,     j,     k + 1));
             face.push_back(get_vertex(i + 1, j,     k + 1));
             face.push_back(get_vertex(i + 1, j + 1, k + 1));
             face.push_back(get_vertex(i,     j + 1, k + 1));
-        } else if (n == 5) { // -Z (Onder)
+        } else if (n == 5) { // -Z (Down)
             face.push_back(get_vertex(i,     j,     k));
             face.push_back(get_vertex(i,     j + 1, k));
             face.push_back(get_vertex(i + 1, j + 1, k));
@@ -264,8 +270,7 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
         return face;
     };
 
-
-
+    // necessary to loop through the neighbors
     const int dx[6] = { 1, -1, 0, 0, 0, 0 };
     const int dy[6] = { 0, 0, 1, -1, 0, 0 };
     const int dz[6] = { 0, 0, 0, 0, 1, -1 };
@@ -276,17 +281,20 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
 
                 unsigned int current_id = voxel_grid(i, j, k);
 
+                // We only need to look at voxel marked as 1 (boundaries)
                 if (current_id != 1) {
                     continue;
                 }
 
                 unsigned int neighbor_id;
 
+                // Loop through all neighbors
                 for (int n = 0; n < 6; ++n) {
                     int ni = static_cast<int>(i) + dx[n];
                     int nj = static_cast<int>(j) + dy[n];
                     int nk = static_cast<int>(k) + dz[n];
 
+                    // Make sure the neighbor is not out of bounds (shouldn't happen bc of the empty boundary)
                     if (ni < 0 || nj < 0 || nk < 0 ||
                     ni >= static_cast<int>(voxel_grid.max_x) ||
                     nj >= static_cast<int>(voxel_grid.max_y) ||
@@ -297,6 +305,7 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
                         neighbor_id = voxel_grid(ni, nj, nk);
                     }
 
+                    // But the exterior voxel in a separate list, and the rest (rooms) to one list
                     if (neighbor_id == 2) {
                         building_envelope_faces.push_back(get_face_indices(i, j, k, n));
                     }
@@ -312,7 +321,7 @@ void extract_surface(VoxelGrid& voxel_grid, double origin_x, double origin_y, do
 int main() {
     std::ifstream input_stream(input_file);
     if (!input_stream.is_open()) {
-        std::cerr << "Kan bestand niet openen: " << input_file << std::endl;
+        std::cerr << "Can't open file: " << input_file << std::endl;
         return 1;
     }
 
@@ -328,6 +337,7 @@ int main() {
     double max_y = -std::numeric_limits<double>::infinity();
     double max_z = -std::numeric_limits<double>::infinity();
 
+    // Read the obj file
     while (getline(input_stream, line)) {
         std::istringstream line_stream(line);
         std::string line_type;
@@ -367,28 +377,30 @@ int main() {
         objects[current_object_id].shells.push_back(current_shell);
     }
 
+    // Bounding box of the object's extent
     double voxel_size = 0.5;
     unsigned int rows_x = static_cast<unsigned int>(std::ceil((max_x - min_x) / voxel_size));
     unsigned int rows_y = static_cast<unsigned int>(std::ceil((max_y - min_y) / voxel_size));
     unsigned int rows_z = static_cast<unsigned int>(std::ceil((max_z - min_z) / voxel_size));
 
-    // VoxelGrid aanmaken met padding (+2)
+    // Create VoxelGrid with a padding of 2 (1 on each side)
     VoxelGrid my_building_grid(rows_x + 2, rows_y + 2, rows_z + 2);
-    std::cout << "Grid succesvol aangemaakt met grootte: " << rows_x + 2 << "x" << rows_y + 2 << "x" << rows_z + 2 << std::endl;
+    std::cout << "Grid created with size: " << rows_x + 2 << "x" << rows_y + 2 << "x" << rows_z + 2 << std::endl;
 
-    // FIX: Verschuif de origin met 1 voxel_size om de padding correct te benutten rondom het model
     double origin_x = min_x - voxel_size;
     double origin_y = min_y - voxel_size;
     double origin_z = min_z - voxel_size;
 
     int marked = mark_voxel(my_building_grid, objects, origin_x, origin_y, origin_z, voxel_size);
-    std::cout << "Aantal unieke voxels gemarkeerd met 1 (muren): " << marked << std::endl;
+    std::cout << "Amount of voxels marked with 1 (boundaries): " << marked << std::endl;
 
+    // Start segment number at 2 and mark all exterior voxels
     std::map<unsigned int, unsigned int> segment_voxel_counter;
     int segmentation_number = 2;
     std::tuple<unsigned int, unsigned int, unsigned int> exterior_point = {0, 0, 0};
     mark_segment(my_building_grid, exterior_point, segmentation_number, segment_voxel_counter);
 
+    // Loop through all voxels, if it's still 0, mark that room with the next segment number
     for (unsigned int i = 0; i < my_building_grid.max_x; ++i) {
         for (unsigned int j = 0; j < my_building_grid.max_y; ++j) {
             for (unsigned int k = 0; k < my_building_grid.max_z; ++k) {
@@ -409,20 +421,18 @@ int main() {
     std::map<unsigned int, std::vector<std::vector<size_t>>> room_solid_faces;
     std::vector<std::array<double, 3>> global_vertices;
 
-
     extract_surface(my_building_grid, origin_x, origin_y, origin_z, voxel_size, building_envelope_faces, room_solid_faces, global_vertices);
 
-    std::cout << "Starting CityJSON..." << std::endl;
-
+    // Write to CityJSON
     nlohmann::json json;
     json["type"] = "CityJSON";
     json["version"] = "2.0";
     json["transform"] = nlohmann::json::object();
-    json["transform"]["scale"] = nlohmann::json::array({voxel_size, voxel_size, voxel_size});
-    json["transform"]["translate"] = nlohmann::json::array({origin_x, origin_y, origin_z});
+    json["transform"]["scale"] = nlohmann::json::array({1.0, 1.0, 1.0});
+    json["transform"]["translate"] = nlohmann::json::array({0.0, 0.0, 0.0});
     json["CityObjects"] = nlohmann::json::object();
 
-    // 1. Voeg het hoofdgebouw toe (Building)
+    // Add the main Building
     nlohmann::json building_obj;
     building_obj["type"] = "Building";
 
@@ -436,9 +446,9 @@ int main() {
     building_geom["boundaries"] = nlohmann::json::array({ building_surfaces });
     building_obj["geometry"] = nlohmann::json::array({ building_geom });
 
-    json["CityObjects"]["id_main_building"] = building_obj;
+    nlohmann::json building_children = nlohmann::json::array();
 
-    // 2. Voeg alle kamers toe (BuildingRoom)
+    // Add all buildingRooms
     for (const auto& [room_id, faces] : room_solid_faces) {
         nlohmann::json room_obj;
         room_obj["type"] = "BuildingRoom";
@@ -455,17 +465,25 @@ int main() {
         room_obj["geometry"] = nlohmann::json::array({ room_geom });
 
         std::string room_key = "Room_" + std::to_string(room_id);
+
+        building_children.push_back(room_key);
         json["CityObjects"][room_key] = room_obj;
     }
 
-    // 3. Converteer de global_vertices naar de JSON vertex-lijst
+    if (!building_children.empty()) {
+        building_obj["children"] = building_children;
+    }
+
+    json["CityObjects"]["id_main_building"] = building_obj;
+
+    // Put all vertices in a CityJSON index list
     nlohmann::json json_vertices = nlohmann::json::array();
     for (const auto& v : global_vertices) {
         json_vertices.push_back({v[0], v[1], v[2]});
     }
     json["vertices"] = json_vertices;
 
-    // 4. Schrijf de boel daadwerkelijk weg naar disk
+    // Actually write the file
     std::filesystem::path p(output_file);
     if (p.has_parent_path()) {
         std::filesystem::create_directories(p.parent_path());
@@ -473,11 +491,11 @@ int main() {
 
     std::ofstream out_file(output_file);
     if (out_file.is_open()) {
-        out_file << json.dump(2); // Indentatie van 2 spaties voor leesbaarheid
+        out_file << json.dump(2);
         out_file.close();
-        std::cout << "Hoera! CityJSON succesvol gegenereerd op: " << output_file << std::endl;
+        std::cout << "CityJSON created at: " << output_file << std::endl;
     } else {
-        std::cerr << "Fout: Kon het CityJSON-outputbestand niet openen!" << std::endl;
+        std::cerr << "Couldn't write to the output file" << std::endl;
     }
 
     return 0;
